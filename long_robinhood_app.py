@@ -252,13 +252,53 @@ if not closed_trades_df.empty:
 else:
     st.info("No closed trades found to display realized P/L.")
 
-# (This section also remains the same)
+# (REPLACE your existing "Current Portfolio Holdings" section in robinhood_app.py with this)
+
 st.subheader("Current Portfolio Holdings")
-current_holdings_df = get_current_holdings(transactions_cleaned_df)
-if not current_holdings_df.empty:
-    st.dataframe(current_holdings_df.sort_values(by='quantity', ascending=False), use_container_width=True)
-else:
-    st.info("No current holdings found.")
+
+try:
+    # Load the new summary table from the database
+    conn = sqlite3.connect(DB_FILE)
+    holdings_summary_df = pd.read_sql_query("SELECT * FROM current_holdings_summary", conn)
+    conn.close()
+
+    if not holdings_summary_df.empty:
+        # Calculate portfolio allocation
+        total_market_value = holdings_summary_df['market_value'].sum()
+        holdings_summary_df['portfolio_allocation_pct'] = (holdings_summary_df['market_value'] / total_market_value) * 100
+        
+        # Format for display
+        holdings_summary_df['unrealized_pl_pct'] = (holdings_summary_df['unrealized_pl'] / holdings_summary_df['cost_basis_total']) * 100
+
+        # Display the detailed table
+        st.dataframe(
+            holdings_summary_df[[
+                'instrument',
+                'quantity',
+                'avg_cost_price',
+                'current_price',
+                'market_value',
+                'unrealized_pl',
+                'unrealized_pl_pct',
+                'portfolio_allocation_pct'
+            ]].sort_values(by='market_value', ascending=False),
+            column_config={
+                "quantity": st.column_config.NumberColumn(format="%.4f"),
+                "avg_cost_price": st.column_config.NumberColumn("Avg Cost", format="$%.2f"),
+                "current_price": st.column_config.NumberColumn("Current Price", format="$%.2f"),
+                "market_value": st.column_config.NumberColumn("Market Value", format="$%,.2f"),
+                "unrealized_pl": st.column_config.NumberColumn("Unrealized P/L", format="$%,.2f"),
+                "unrealized_pl_pct": st.column_config.NumberColumn("Unrealized P/L %", format="%.2f%%"),
+                "portfolio_allocation_pct": st.column_config.NumberColumn("Allocation %", format="%.2f%%"),
+            },
+            use_container_width=True
+        )
+    else:
+        st.info("No current holdings found.")
+
+except Exception as e:
+    st.warning(f"Could not display current holdings: {e}")
+
 
 # --- START OF NEW SECTION ---
 # (Place the new Trading Performance section here)
@@ -272,7 +312,7 @@ if not closed_trades_df.empty:
 
     total_trades = len(closed_trades_df)
     win_count = len(winning_trades)
-    
+
     win_rate = (win_count / total_trades) * 100 if total_trades > 0 else 0
 
     # Safely calculate average gain and loss
@@ -282,7 +322,7 @@ if not closed_trades_df.empty:
     # Safely calculate Profit Factor
     total_gains = winning_trades['realized_profit_loss'].sum()
     total_losses = abs(losing_trades['realized_profit_loss'].sum())
-    
+
     if total_losses > 0:
         profit_factor = total_gains / total_losses
     elif total_gains > 0:
@@ -318,7 +358,7 @@ try:
     # Note: For a precise market value, you'd need live price data.
     # Here, we'll use the cost basis as a proxy for allocation.
     holdings_with_cost = get_current_holdings(transactions_cleaned_df)
-    
+
     if not holdings_with_cost.empty and not sector_df.empty:
         # Merge holdings with sector data
         holdings_with_sector = pd.merge(holdings_with_cost, sector_df, on='instrument', how='left')
@@ -326,10 +366,10 @@ try:
 
         # Group by sector and sum the cost basis
         sector_allocation = holdings_with_sector.groupby('sector')['cost_basis_total'].sum().reset_index()
-        
+
         # Create a pie chart
-        fig_pie = px.pie(sector_allocation, 
-                         names='sector', 
+        fig_pie = px.pie(sector_allocation,
+                         names='sector',
                          values='cost_basis_total',
                          title='Sector Allocation by Cost Basis',
                          hole=0.3)
@@ -366,7 +406,7 @@ if selected_instrument:
     loss_count = instrument_closed_trades[instrument_closed_trades['realized_profit_loss'] < 0].shape[0]
     total_trades = win_count + loss_count
     win_rate = (win_count / total_trades) * 100 if total_trades > 0 else 0
-    
+
     # Check current holdings for unrealized P/L
     current_holding = current_holdings_df[current_holdings_df['instrument'] == selected_instrument]
 
@@ -374,22 +414,22 @@ if selected_instrument:
     col1.metric("Total Realized P/L", f"${total_realized_pl:,.2f}")
     col2.metric("Win Rate", f"{win_rate:.2f}%")
     col3.metric("Closed Trades", f"{total_trades}")
-    
+
     # --- Display Current Position (if any) ---
     if not current_holding.empty:
         st.markdown("##### Current Position")
         st.dataframe(current_holding, use_container_width=True)
-    
+
     # --- Display Transaction History ---
     st.markdown("##### Transaction History")
     # Show relevant columns from the transaction log for this instrument
     st.dataframe(
         instrument_transactions[['activity_date', 'trans_code', 'quantity', 'price', 'amount']].sort_values(
             by='activity_date', ascending=False
-        ), 
+        ),
         use_container_width=True
     )
-    
+
     # --- Display Closed Trades Summary ---
     if not instrument_closed_trades.empty:
         st.markdown("##### Closed Trades Summary")
