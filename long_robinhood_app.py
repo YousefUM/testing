@@ -301,4 +301,42 @@ else:
     st.info("No closed trades found to calculate Win/Loss Ratio.")
 
 # --- END OF SCRIPT ---
+# (Add this code to robinhood_app.py, for example, after the "Current Holdings" section)
 
+
+# --- Sector Allocation Analysis ---
+st.markdown("---")
+st.subheader("Portfolio Sector Allocation")
+
+try:
+    # Reload data from the new table
+    conn = sqlite3.connect(DB_FILE)
+    sector_df = pd.read_sql_query("SELECT * FROM instrument_sectors", conn)
+    conn.close()
+
+    # Get current holdings and their market value (we need to estimate this)
+    # Note: For a precise market value, you'd need live price data.
+    # Here, we'll use the cost basis as a proxy for allocation.
+    holdings_with_cost = get_current_holdings(transactions_cleaned_df)
+    
+    if not holdings_with_cost.empty and not sector_df.empty:
+        # Merge holdings with sector data
+        holdings_with_sector = pd.merge(holdings_with_cost, sector_df, on='instrument', how='left')
+        holdings_with_sector['sector'].fillna('N/A', inplace=True)
+
+        # Group by sector and sum the cost basis
+        sector_allocation = holdings_with_sector.groupby('sector')['cost_basis_total'].sum().reset_index()
+        
+        # Create a pie chart
+        fig_pie = px.pie(sector_allocation, 
+                         names='sector', 
+                         values='cost_basis_total',
+                         title='Sector Allocation by Cost Basis',
+                         hole=0.3)
+        fig_pie.update_traces(textposition='inside', textinfo='percent+label')
+        st.plotly_chart(fig_pie, use_container_width=True)
+    else:
+        st.info("Not enough data to generate sector allocation chart.")
+
+except Exception as e:
+    st.warning(f"Could not generate sector analysis: {e}")
