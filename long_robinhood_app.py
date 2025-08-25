@@ -340,3 +340,62 @@ try:
 
 except Exception as e:
     st.warning(f"Could not generate sector analysis: {e}")
+# (Add this code to the end of your robinhood_app.py script)
+
+# --- Instrument-Specific Drill-Down Analysis ---
+st.markdown("---")
+st.subheader("Instrument-Specific Analysis 🔍")
+
+# Get a sorted list of unique instruments from your transaction history
+all_instruments = sorted(transactions_cleaned_df['instrument'].dropna().unique().tolist())
+
+# Create a dropdown menu for the user to select an instrument
+selected_instrument = st.selectbox("Select an Instrument to Analyze", all_instruments)
+
+if selected_instrument:
+    # --- Filter data for the selected instrument ---
+    instrument_transactions = transactions_cleaned_df[transactions_cleaned_df['instrument'] == selected_instrument]
+    instrument_closed_trades = closed_trades_df[closed_trades_df['instrument'] == selected_instrument]
+
+    # --- Display Key Metrics ---
+    st.markdown(f"#### Performance Metrics for **{selected_instrument}**")
+
+    # Calculate metrics
+    total_realized_pl = instrument_closed_trades['realized_profit_loss'].sum()
+    win_count = instrument_closed_trades[instrument_closed_trades['realized_profit_loss'] > 0].shape[0]
+    loss_count = instrument_closed_trades[instrument_closed_trades['realized_profit_loss'] < 0].shape[0]
+    total_trades = win_count + loss_count
+    win_rate = (win_count / total_trades) * 100 if total_trades > 0 else 0
+    
+    # Check current holdings for unrealized P/L
+    current_holding = current_holdings_df[current_holdings_df['instrument'] == selected_instrument]
+
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Total Realized P/L", f"${total_realized_pl:,.2f}")
+    col2.metric("Win Rate", f"{win_rate:.2f}%")
+    col3.metric("Closed Trades", f"{total_trades}")
+    
+    # --- Display Current Position (if any) ---
+    if not current_holding.empty:
+        st.markdown("##### Current Position")
+        st.dataframe(current_holding, use_container_width=True)
+    
+    # --- Display Transaction History ---
+    st.markdown("##### Transaction History")
+    # Show relevant columns from the transaction log for this instrument
+    st.dataframe(
+        instrument_transactions[['activity_date', 'trans_code', 'quantity', 'price', 'amount']].sort_values(
+            by='activity_date', ascending=False
+        ), 
+        use_container_width=True
+    )
+    
+    # --- Display Closed Trades Summary ---
+    if not instrument_closed_trades.empty:
+        st.markdown("##### Closed Trades Summary")
+        st.dataframe(
+            instrument_closed_trades[['sell_date', 'sold_quantity_transaction', 'sell_price', 'realized_profit_loss', 'holding_period_days']].sort_values(
+                by='sell_date', ascending=False
+            ),
+            use_container_width=True
+        )
